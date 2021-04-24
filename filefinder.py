@@ -26,6 +26,7 @@ Execution:
 			default
 	-g			Reads all found files (with defined extension) and saves
 			its content in one file - default: ./combined.txt
+	--clean		Removes spaces on each line (good for lists of passwords)		
 	"""
 	search_location = '.'
 	search_extension = 'txt'
@@ -33,6 +34,7 @@ Execution:
 	out_file_name = 'combined.txt'
 	scan = False
 	gatthering = False
+	clear_spaces = False
 	
 	for arg in sys.argv[1:]:
 		if arg[:3].upper() == 'LO:':
@@ -49,6 +51,8 @@ Execution:
 			scan = True
 		elif arg[:2].upper() == '-G':
 			gatthering = True
+		elif arg[:7].upper() == '--CLEAN':
+			clear_spaces = True
 
 
 
@@ -61,12 +65,12 @@ Execution:
 			for name in files:
 				file_path = os.path.join(path, name)
 				for extension in extensions:					
-					extension = '.' + extension 
-					if extension in name:
+					extension = '.' + extension						
+					if name.upper().endswith(extension.upper()):					
 						hits += 1
 						findings.append(file_path)
 						print(file_path)
-						break					
+													
 						
 					
 		if hits == 0:
@@ -78,12 +82,19 @@ Execution:
 	def read_file(found_file):
 		with open(found_file, 'r') as notes:
 			notes = notes.read()
+			notes = notes.strip()
 		return notes
 		
 	def remove_duplicates(location=out_location, name=out_file_name):
 		file_name = str(location) + str(name)
 		with open(file_name, 'r') as result:
-			uniqlines = set(result.readlines())
+			if FilesEnum.clear_spaces == False:				
+				uniqlines = set(result.readlines())
+			else:
+				lines = result.readlines()
+				lines = [line.replace(' ', '') for line in lines]
+				uniqlines = set(lines)
+					
 			with open(file_name, 'w') as rmdup:
 				rmdup.writelines(set(uniqlines))	
 

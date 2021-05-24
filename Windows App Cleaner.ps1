@@ -7,6 +7,8 @@
 
 # Lists all app packages on system {-AllUsers > will return all apps, even not logged users}
 #Get-AppxPackage -AllUsers | Select Name, PackageFullName
+# Export all packages and save it in csv file
+#Get-AppxPackage | Select Name, PackageFullName, InstallLocation | export-csv -Path `apps.csv' -NoTypeInformation
 
 # Removes the app from Windows
 #Get-AppxPackage Microsoft.XboxApp | Remove-AppxPackage

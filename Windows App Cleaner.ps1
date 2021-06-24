@@ -69,3 +69,9 @@ If ("-clean" -in $provided_args)
 	write-host Cleaning beggins now.
 	CleanUp
 	}
+# ####################################################################################################	
+# To Remove office 365 language packages from Windows 10, use one of these in Administrator Powershell
+
+# Get-AppxPackage | Select Name | Where-Object {$_.Name -like "office"} | Remove-AppxPackage
+# or
+# Get-AppxPackage | Select Name | Where-Object {$_.Name -like "office"} | Uninstall-Package

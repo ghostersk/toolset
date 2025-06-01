@@ -10,6 +10,7 @@ SERVER_IP="10.40.41.1/24"
 SERVER_PRIV_KEY="/etc/wireguard/$WG_INTERFACE.key"
 WG_CONF="/etc/wireguard/$WG_INTERFACE.conf"
 WG_ALLOWED_IPS_CLIENT="10.40.41.0/24, 10.97.195.0/24"  # this is for client what will route via wg
+WG_SCRIPT="/etc/wireguard/script-wireguard.sh"
 
 # Client1 generation:
 CLIENT_NAME="client1"
@@ -82,8 +83,10 @@ cat > "$WG_CONF" <<EOF
 Address = $SERVER_IP
 ListenPort = $WG_PORT
 PostUp = wg set %i private-key /etc/wireguard/%i.key
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o \$(ip route list default | awk '/default/ {print \$5}') -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o \$(ip route list default | awk '/default/ {print \$5}') -j MASQUERADE
+PostUp = /etc/wireguard/script-wireguard.sh up
+PostDown = /etc/wireguard/script-wireguard.sh down
+# PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o \$(ip route list default | awk '/default/ {print \$5}') -j MASQUERADE
+# PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o \$(ip route list default | awk '/default/ {print \$5}') -j MASQUERADE
 
 [Peer]
 # Client 1
@@ -93,6 +96,64 @@ AllowedIPs = $CLIENT_IP
 EOF
 chmod 600 "$WG_CONF"
 fi
+
+cat > "$WG_SCRIPT" <<EOF
+#!/bin/bash
+# Check if an argument is provided - up for PostUp, down for PostDown
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 {up|down}"
+    exit 1
+fi
+
+# Define network and client IP variables
+WG_NETWORK="10.40.41.0/24"
+CLIENT_IP="10.40.41.2"
+
+# Get public IP from file
+PUB_IP=$(cat /etc/wireguard/wan_port)
+
+# Interface variable for WireGuard
+INTERFACE="%i"
+
+case "$1" in
+    up)
+        # Add WireGuard interface to trusted zone
+        firewall-cmd --zone=trusted --add-interface="$INTERFACE"
+        # Add direct rule for NAT masquerading
+        firewall-cmd --direct --add-rule ipv4 nat POSTROUTING 0 -o "$INTERFACE" -j MASQUERADE
+        # OPTIONAL: Port forwarding via the tunnell:
+            # Enable masquerading in trusted zone
+        firewall-cmd --zone=trusted --add-masquerade
+            # Add port forwarding rules for public zone
+        firewall-cmd --zone=public --add-forward-port=port=80:proto=tcp:toport=5000:toaddr="$CLIENT_IP"
+            # Add rich rules for trusted zone so we can access it while on wg or from server itself
+        firewall-cmd --zone=trusted --add-rich-rule="rule family=ipv4 source address=\"$WG_NETWORK\" destination address=\"$PUB_IP\" forward-port port=80 protocol=tcp to-port=5000 to-addr=\"$CLIENT_IP\""
+
+        echo "WireGuard PostUp rules applied"
+        ;;
+    down)
+        # Remove WireGuard interface from trusted zone
+        firewall-cmd --zone=trusted --remove-interface="$INTERFACE"
+        # Remove direct rule for NAT masquerading
+        firewall-cmd --direct --remove-rule ipv4 nat POSTROUTING 0 -o "$INTERFACE" -j MASQUERADE
+        # OPTIONAL: Port forwarding via the tunnell:
+            # Remove masquerading from trusted zone
+        firewall-cmd --zone=trusted --remove-masquerade
+            # Remove port forwarding rules from public zone
+        firewall-cmd --zone=public --remove-forward-port=port=80:proto=tcp:toport=5000:toaddr="$CLIENT_IP"
+            # Remove rich rules from trusted zone
+        firewall-cmd --zone=trusted --remove-rich-rule="rule family=ipv4 source address=\"$WG_NETWORK\" destination address=\"$PUB_IP\" forward-port port=80 protocol=tcp to-port=5000 to-addr=\"$CLIENT_IP\""
+
+        echo "WireGuard PostDown rules applied"
+        ;;
+    *)
+        echo "Invalid argument: $1"
+        echo "Usage: $0 {up|down}"
+        exit 1
+        ;;
+esac
+EOF
+chmod 700 "$WG_SCRIPT"
 
 systemctl enable wg-quick@$WG_INTERFACE
 systemctl restart wg-quick@$WG_INTERFACE
